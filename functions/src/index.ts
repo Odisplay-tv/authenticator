@@ -8,12 +8,12 @@ const JWT_SECRET = String(process.env.JWT_SECRET)
 const func = functions.region("europe-west1").https.onCall
 
 type GenerateToken = (_: GenerateTokenInput) => Promise<GenerateTokenOutput>
-type GenerateTokenInput = {token: string}
+type GenerateTokenInput = {idToken: string}
 type GenerateTokenOutput = {ok: true; token: string} | {ok: false; message: string}
 
-const generateTokenFunc: GenerateToken = async ({token}) => {
+const generateTokenFunc: GenerateToken = async ({idToken}) => {
   try {
-    await admin.auth().verifyIdToken(token)
+    await admin.auth().verifyIdToken(idToken)
     return {ok: true, token: jwt.sign({role: "bo_user"}, JWT_SECRET, {algorithm: "HS256"})}
   } catch (err) {
     return {ok: false, message: err.message}
