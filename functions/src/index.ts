@@ -1,26 +1,73 @@
 import * as admin from "firebase-admin"
 import * as functions from "firebase-functions"
-import * as jwt from "jsonwebtoken"
+import {pipe, split, shuffle, take, join} from "lodash/fp"
+import {DateTime} from "luxon"
 
 admin.initializeApp()
 
-const JWT_SECRET = String(process.env.JWT_SECRET)
-const EXP_DELAY = 60 * 60 * 30 // 30 min
+const auth = admin.auth()
+const firestore = admin.firestore()
+const {onCall} = functions.region("europe-west1").https
+const codeCharRange = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-type GenerateToken = (_: GenerateTokenInput) => Promise<GenerateTokenOutput>
-type GenerateTokenInput = {idToken: string}
-type GenerateTokenOutput = {ok: true; token: string} | {ok: false; message: string}
-
-const generateTokenFunc: GenerateToken = async ({idToken}) => {
+function generatePairingCode() {
   try {
-    await admin.auth().verifyIdToken(idToken)
-    const payload = {role: "bo_user", exp: Math.round(Date.now() / 1000) + EXP_DELAY}
-    const opts = {algorithm: "HS256"}
-    return {ok: true, token: jwt.sign(payload, JWT_SECRET, opts)}
+    const code: string = pipe([split(""), shuffle, take(5), join("")])(codeCharRange)
+    const codeDocRef = firestore.collection("pairingCodes").doc(code)
+    return firestore.runTransaction(async t => {
+      const codeDoc = await t.get(codeDocRef)
+      if (codeDoc.exists) throw new Error("code-already-exists")
+      t.set(codeDocRef, {
+        code,
+        exp: DateTime.local()
+          .plus({hour: 1})
+          .toJSDate(),
+      })
+
+      return {ok: true, code}
+    })
   } catch (err) {
     return {ok: false, message: err.message}
   }
 }
 
-const onCall = functions.region("europe-west1").https.onCall
-export const generateToken = onCall(generateTokenFunc)
+export const requestPairingCode = onCall(async () => {
+  let res = {ok: false}
+
+  for (let retries = 5; !res.ok && retries > 0; retries--) {
+    res = await generatePairingCode()
+  }
+
+  return res
+})
+
+export const linkScreenToUser = onCall(async ({idToken, code}) => {
+  try {
+    const {uid: userId} = await auth.verifyIdToken(idToken)
+    const codeDocRef = firestore.collection("pairingCodes").doc(code)
+    const screenId = await firestore.runTransaction(async t => {
+      const codeDoc = await t.get(codeDocRef)
+      if (!codeDoc.exists) throw new Error("code-not-found")
+      const data = codeDoc.data()
+      if (!data) throw new Error("code-invalid")
+
+      return firestore
+        .collection(`users/${userId}/screens`)
+        .add({code})
+        .then(({id}) => id)
+    })
+
+    // Clean expired codes
+    firestore
+      .collection("pairingCodes")
+      .where("exp", "<", new Date())
+      .get()
+      .then(snapshot => snapshot.forEach(doc => doc.ref.delete()))
+
+    await codeDocRef.delete()
+
+    return {ok: true, screenId}
+  } catch (err) {
+    return {ok: false, message: err.message}
+  }
+})
