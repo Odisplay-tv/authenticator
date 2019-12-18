@@ -45,7 +45,7 @@ export const requestPairingCode = onCall(async () => {
   return res
 })
 
-export const linkScreenToUser = onCall(async ({idToken, code}) => {
+export const linkScreenToUser = onCall(async ({idToken, code, name}) => {
   try {
     const {uid: userId} = await auth.verifyIdToken(idToken)
     const {id: screenId} = firestore.collection(`users/${userId}/screens`).doc()
@@ -62,7 +62,7 @@ export const linkScreenToUser = onCall(async ({idToken, code}) => {
 
     await firestore
       .doc(`users/${userId}/screens/${screenId}`)
-      .set({id: screenId, pairingId, layoutId: null})
+      .set({id: screenId, name, pairingId, layoutId: null})
 
     // Clean expired codes asynchronously
     firestore
