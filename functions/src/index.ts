@@ -62,7 +62,7 @@ export const linkScreenToUser = onCall(async ({idToken, code, name}) => {
 
     await firestore
       .doc(`users/${userId}/screens/${screenId}`)
-      .set({id: screenId, name, pairingId, layoutId: null})
+      .set({id: screenId, name, pairingId, layout: null})
 
     // Clean expired codes asynchronously
     firestore
