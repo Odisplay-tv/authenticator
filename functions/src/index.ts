@@ -1,7 +1,8 @@
 import * as admin from "firebase-admin"
 import * as functions from "firebase-functions"
-import {pipe, split, shuffle, take, join} from "lodash/fp"
 import {DateTime} from "luxon"
+import * as uuid from "uuid/v4"
+import {pipe, split, shuffle, take, join} from "lodash/fp"
 
 admin.initializeApp()
 
@@ -62,7 +63,7 @@ export const linkScreenToUser = onCall(async ({idToken, code, name}) => {
 
     await firestore
       .doc(`users/${userId}/screens/${screenId}`)
-      .set({id: screenId, name, pairingId, layout: null})
+      .set({id: screenId, name, pairingId, layout: {id: uuid(), type: "leaf", data: null}})
 
     // Clean expired codes asynchronously
     firestore
